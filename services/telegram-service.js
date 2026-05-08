@@ -26,7 +26,7 @@ class TelegramService {
     handleStart(msg) {
         const chatId = msg.chat.id;
         this.bot.sendMessage(chatId, 
-            "🚨 *WhatsApp Mass Reporter Bot*\n\n/report - Mode manuel\n/autoreport - Mode automatique\n/mystats - Tes stats\n/help - Aide",
+            "🚨 *WhatsApp Mass Reporter Bot*\n\n/report - Mode manuel (rapide avec templates)\n/autoreport - Mode automatique (juste le numéro)\n/mystats - Tes stats\n/help - Aide",
             { parse_mode: 'Markdown' }
         );
     }
@@ -98,7 +98,7 @@ class TelegramService {
     handleHelp(msg) {
         const chatId = msg.chat.id;
         this.bot.sendMessage(chatId, 
-            "/report - Manuel\n/autoreport - Auto\n/mystats - Stats\n/emailstats - Emails",
+            "/report - Manuel avec templates\n/autoreport - Auto\n/mystats - Stats\n/emailstats - Emails",
             { parse_mode: 'Markdown' }
         );
     }
@@ -118,10 +118,11 @@ class TelegramService {
             case 'awaiting_quantity': this.handleReportQuantity(chatId, text, session); break;
             case 'auto_number': this.handleAutoNumber(chatId, text, session); break;
             case 'confirm_auto': this.handleConfirmAuto(chatId, text, session); break;
+            default: break;
         }
     }
 
-    // ==================== Méthodes du mode manuel ====================
+    // ==================== MODE MANUEL ====================
     handlePhoneNumber(chatId, text, session) {
         if (!this.reportService.isValidPhoneNumber(text)) {
             return this.bot.sendMessage(chatId, "❌ Format invalide. Ex: +1234567890");
@@ -141,16 +142,42 @@ class TelegramService {
         session.category = config.REPORT_CATEGORIES[idx];
         session.step = 'awaiting_description';
         this.userSessions.set(chatId, session);
-        this.bot.sendMessage(chatId, "📝 Décris l'incident (min 20 caractères) :");
+        
+        // Liste des templates de description (prédéfinies)
+        const templates = [
+            "1️⃣ Spam : Envoi de messages publicitaires et de liens malveillants.",
+            "2️⃣ Harcèlement : Menaces et insultes répétées.",
+            "3️⃣ Usurpation d'identité : Se fait passer pour une autre personne.",
+            "4️⃣ Partage privé : Mon numéro a été partagé sans mon consentement.",
+            "5️⃣ Activité illégale : Vente de drogues, arnaques.",
+            "6️⃣ Contenu explicite : Envoi de photos/videos obscènes non sollicitées.",
+            "7️⃣ Arnaque financière : Demande d'argent sous faux prétexte.",
+            "8️⃣ Faux compte : Utilise mon nom et ma photo.",
+            "9️⃣ Virus : Envoi de fichiers infectés.",
+            "🔟 Autre : Comportement suspect général."
+        ];
+        session.templates = templates.map(t => t.replace(/^\d+️⃣\s*/, '')); // stocke sans le numéro
+        this.bot.sendMessage(chatId, "📝 *Choisis une description* (envoie le numéro) :\n\n" + templates.join('\n'), { parse_mode: 'Markdown' });
+        session.step = 'awaiting_template_choice';
+        this.userSessions.set(chatId, session);
     }
 
-    handleDescription(chatId, text, session) {
-        if (text.length < 20) return this.bot.sendMessage(chatId, "Minimum 20 caractères.");
-        if (text.length > 1000) return this.bot.sendMessage(chatId, "Maximum 1000 caractères.");
-        session.description = text;
+    // Nouvelle étape : choix du template
+    async handleTemplateChoice(chatId, text, session) {
+        const idx = parseInt(text) - 1;
+        if (isNaN(idx) || idx < 0 || idx >= session.templates.length) {
+            return this.bot.sendMessage(chatId, "❌ Choix invalide. Envoie un numéro entre 1 et 10.");
+        }
+        session.description = session.templates[idx];
         session.step = 'awaiting_contact';
         this.userSessions.set(chatId, session);
         this.bot.sendMessage(chatId, "📞 Contact (ou 'skip' pour anonyme) :");
+    }
+
+    // Remplacer la méthode handleDescription par handleTemplateChoice
+    async handleDescription(chatId, text, session) {
+        // Rediriger vers le choix de template
+        await this.handleTemplateChoice(chatId, text, session);
     }
 
     handleContactInfo(chatId, text, session) {
